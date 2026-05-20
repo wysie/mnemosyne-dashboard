@@ -281,6 +281,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(self.store.graph(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 300, maximum=1000)))
             if path == "/api/consolidations":
                 return self._send_json({"items": self.store.consolidations(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 100, maximum=500))})
+            if path == "/api/memoria/stats":
+                return self._send_json(self.store.memoria_stats())
+            if path == "/api/memoria/facts":
+                return self._send_json({"items": self.store.memoria_facts(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
+            if path == "/api/memoria/timelines":
+                return self._send_json({"items": self.store.memoria_timelines(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
+            if path == "/api/memoria/instructions":
+                return self._send_json({"items": self.store.memoria_instructions(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
+            if path == "/api/memoria/kg":
+                return self._send_json({"items": self.store.memoria_kg(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
+            if path == "/api/memoria/preferences":
+                return self._send_json({"items": self.store.memoria_preferences(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
             return self._send_json({"error": "not found"}, 404)
         except Exception as e:
             return self._send_json({"error": str(e)}, 500)

@@ -379,6 +379,7 @@ function switchTab(name, opts={}){
   if(section==='visualiser3d') loadThreeVisualiser();
   if(section==='memoryPalace') loadMemoryPalace();
   if(section==='settings') { loadAuthStatus(); loadDiagnostics(); loadRealtimePanel(); }
+  if(section==='memoria') loadMemoria();
 }
 
 async function loadStats(){
@@ -3367,6 +3368,112 @@ function animateMemoryPalace(t=0){
   memoryPalace.frame = requestAnimationFrame(animateMemoryPalace);
 }
 
+// ── Memoria Tab ──────────────────────────────────────────────────────
+
+async function loadMemoria(){
+  const nameMap = {facts:'Facts', timelines:'Timelines', instructions:'Instructions', kg:'KG', preferences:'Preferences'};
+  const stats = await api('/api/memoria/stats');
+  $('#memoriaCards').innerHTML = Object.entries(stats.tables || {}).map(([tbl, info]) =>
+    `<div class="card"><div class="num">${Number(info.count).toLocaleString()}</div><div class="label">${nameMap[tbl.replace('memoria_','')]||tbl.replace('memoria_','')}</div></div>`
+  ).join('');
+  $('#memoriaCounts').innerHTML = Object.entries(stats.tables || {}).map(([tbl, info]) =>
+    `<div class="break-row"><span>${nameMap[tbl.replace('memoria_','')]||tbl.replace('memoria_','')}</span><strong>${Number(info.count).toLocaleString()}</strong></div>`
+  ).join('');
+  const sessionEl = $('#memoriaSessions');
+  sessionEl.innerHTML = (stats.top_sessions || []).map(s =>
+    `<div class="break-row"><span>${esc(s.session_id.slice(0,24))}</span><strong>${s.count}</strong></div>`
+  ).join('') || '<span class="muted">no data</span>';
+  // Load initial data for each subpanel
+  loadMemoriaTable('memoriaFacts', '/api/memoria/facts', 'memoriaFactsList', 'memoriaFactsCount');
+  loadMemoriaTable('memoriaTimelines', '/api/memoria/timelines', 'memoriaTimelinesList', 'memoriaTimelinesCount');
+  loadMemoriaTable('memoriaInstructions', '/api/memoria/instructions', 'memoriaInstructionsList', 'memoriaInstructionsCount');
+  loadMemoriaKg();
+  loadMemoriaTable('memoriaPreferences', '/api/memoria/preferences', 'memoriaPreferencesList', 'memoriaPreferencesCount');
+}
+
+async function loadMemoriaTable(inputId, apiPath, listId, countId){
+  const q = $(`#${inputId}Query`)?.value?.trim() || '';
+  const r = await api(`${apiPath}?q=${encodeURIComponent(q)}&limit=200`);
+  const items = r.items || [];
+  if(countId) $(`#${countId}`).textContent = `${items.length} entries`;
+  const list = $(`#${listId}`);
+  if(!list) return;
+  if(!items.length){
+    list.innerHTML = '<div class="muted" style="padding:2rem;text-align:center">No entries found.</div>';
+    return;
+  }
+  // Determine table type from apiPath
+  const renderer = memoriaRenderer(apiPath);
+  list.innerHTML = items.map(item => renderer(item)).join('');
+}
+
+function memoriaRenderer(apiPath){
+  // Common hidden/internal fields — never shown
+  const hidden = new Set(['id', 'message_idx', 'updated_msg_idx', 'valid_from_msg_idx', 'valid_to_msg_idx', 'version_id', 'previous_value']);
+  if(apiPath.includes('/facts')){
+    return function(item){
+      const key = esc(item.key || '');
+      const value = esc(item.value || '');
+      const ctx = item.context_snippet ? esc(item.context_snippet) : '';
+      const meta = [
+        item.fact_type ? `<span class="badge">${esc(item.fact_type)}</span>` : '',
+        item.importance ? `<span class="badge">imp ${Number(item.importance).toFixed(2)}</span>` : '',
+        item.session_id && item.session_id !== 'default' ? `<span class="badge">${esc(item.session_id.slice(0,19))}</span>` : '',
+      ].filter(Boolean).join('');
+      return `<div class="item"><div class="meta">${meta}</div><div class="content"><strong>${key}</strong>${value ? ': ' + value : ''}</div>${ctx ? `<div class="content" style="font-size:.85em;opacity:.7;word-break:break-word">${ctx}</div>` : ''}</div>`;
+    };
+  }
+  if(apiPath.includes('/timelines')){
+    return function(item){
+      const desc = esc(String(item.description || ''));
+      const date = item.date ? esc(item.date) : '';
+      const meta = [
+        date ? `<span class="badge">${date}</span>` : '',
+        item.source ? `<span class="badge">${esc(item.source)}</span>` : '',
+        item.session_id && item.session_id !== 'default' ? `<span class="badge">${esc(item.session_id.slice(0,19))}</span>` : '',
+      ].filter(Boolean).join('');
+      return `<div class="item"><div class="meta">${meta}</div><div class="content">${desc}</div></div>`;
+    };
+  }
+  if(apiPath.includes('/instructions')){
+    return function(item){
+      const instr = esc(item.instruction || '');
+      const topic = item.topic ? esc(item.topic) : '';
+      const ctx = item.context_snippet ? esc(item.context_snippet) : '';
+      const meta = [
+        topic ? `<span class="badge">${topic}</span>` : '',
+        item.active == 1 ? '<span class="badge status-active">active</span>' : '<span class="badge status-expired">inactive</span>',
+        item.session_id && item.session_id !== 'default' ? `<span class="badge">${esc(item.session_id.slice(0,19))}</span>` : '',
+      ].filter(Boolean).join('');
+      return `<div class="item"><div class="meta">${meta}</div><div class="content">${instr}</div>${ctx ? `<div class="content" style="font-size:.85em;opacity:.7;word-break:break-word">${ctx}</div>` : ''}</div>`;
+    };
+  }
+  // Generic renderer for preferences etc.
+  return function(item){
+    const content = item.preference || item.instruction || item.description || item.value || JSON.stringify(item);
+    const meta = Object.entries(item).filter(([k,v]) => !hidden.has(k) && v !== null && v !== undefined && v !== '' && !['preference','instruction','description','value','context_snippet','key'].includes(k))
+      .map(([k,v]) => `<span class="badge">${esc(k)}: ${esc(String(v).slice(0,40))}</span>`).join('');
+    return `<div class="item"><div class="meta">${meta}</div><div class="content">${esc(String(content).slice(0,500))}</div></div>`;
+  };
+}
+
+async function loadMemoriaKg(){
+  const q = $('#memoriaKgQuery')?.value?.trim() || '';
+  const r = await api(`/api/memoria/kg?q=${encodeURIComponent(q)}&limit=200`);
+  const items = r.items || [];
+  $('#memoriaKgCount').textContent = `${items.length} entries`;
+  const tbody = $('#memoriaKgRows');
+  if(!tbody) return;
+  if(!items.length){
+    tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center">No triples found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(item => {
+    const confidence = item.confidence !== null && item.confidence !== undefined ? Number(item.confidence).toFixed(2) : '—';
+    return `<tr><td>${esc(item.subject||'')}</td><td>${esc(item.predicate||'')}</td><td>${esc(item.object||'')}</td><td>${confidence}</td></tr>`;
+  }).join('');
+}
+
 $$('nav button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 $$('.section-tabs button').forEach(b => b.onclick = () => {
   const panelRoute = ({ exploreMemories:'memories', exploreRecall:'recall', activityTimeline:'timelineView', activityConsolidations:'consolidations', graphGraph:'graph', graphTriples:'triples', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations' })[b.dataset.panel];
@@ -3437,6 +3544,17 @@ updateConstellationPauseButton();
 updateConstellationPanButton();
 $('#consolidationQuery').oninput = renderConsolidations;
 $('#consolidationClear').onclick = () => { $('#consolidationQuery').value = ''; renderConsolidations(); };
+// Memoria search handlers
+$('#memoriaFactsSearch').onclick = () => loadMemoriaTable('memoriaFacts', '/api/memoria/facts', 'memoriaFactsList', 'memoriaFactsCount');
+$('#memoriaFactsQuery').onkeydown = e => { if(e.key==='Enter') $('#memoriaFactsSearch').click(); };
+$('#memoriaTimelinesSearch').onclick = () => loadMemoriaTable('memoriaTimelines', '/api/memoria/timelines', 'memoriaTimelinesList', 'memoriaTimelinesCount');
+$('#memoriaTimelinesQuery').onkeydown = e => { if(e.key==='Enter') $('#memoriaTimelinesSearch').click(); };
+$('#memoriaInstructionsSearch').onclick = () => loadMemoriaTable('memoriaInstructions', '/api/memoria/instructions', 'memoriaInstructionsList', 'memoriaInstructionsCount');
+$('#memoriaInstructionsQuery').onkeydown = e => { if(e.key==='Enter') $('#memoriaInstructionsSearch').click(); };
+$('#memoriaKgSearch').onclick = loadMemoriaKg;
+$('#memoriaKgQuery').onkeydown = e => { if(e.key==='Enter') loadMemoriaKg(); };
+$('#memoriaPreferencesSearch').onclick = () => loadMemoriaTable('memoriaPreferences', '/api/memoria/preferences', 'memoriaPreferencesList', 'memoriaPreferencesCount');
+$('#memoriaPreferencesQuery').onkeydown = e => { if(e.key==='Enter') $('#memoriaPreferencesSearch').click(); };
 $('#closeDetail').onclick = () => closeDetail();
 $('#loginButton').onclick = async () => {
   try { await postJson('/api/auth/login', {password: $('#loginPassword').value}); hideLogin(); $('#loginError').textContent=''; await refreshAuthState(); loadStats(); }

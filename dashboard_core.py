@@ -1653,3 +1653,71 @@ class DashboardStore:
                 key = (e.get("timestamp") or "unknown")[:10]
             groups.setdefault(key or "unknown", []).append(e)
         return {"query": q, "group": group, "groups": [{"key": k, "events": v, "count": len(v)} for k, v in groups.items()]}
+
+    # ── MEMORIA Tabellen ──────────────────────────────────────────────
+
+    def memoria_stats(self) -> dict[str, Any]:
+        """Übersicht über alle MEMORIA-Tabellen."""
+        with self.connect() as con:
+            tables = self._tables(con)
+            stats: dict[str, Any] = {"tables": {}}
+            for tbl in ["memoria_facts", "memoria_timelines", "memoria_instructions", "memoria_kg", "memoria_preferences"]:
+                if tbl in tables:
+                    cols = self._columns(con, tbl)
+                    stats["tables"][tbl] = {
+                        "count": int(con.execute(f"SELECT count(*) FROM {tbl}").fetchone()[0]),
+                        "columns": sorted(cols),
+                    }
+                else:
+                    stats["tables"][tbl] = {"count": 0, "columns": []}
+            # Top sessions across MEMORIA tables
+            all_sessions: Counter[str] = Counter()
+            for tbl in ["memoria_facts", "memoria_timelines", "memoria_instructions", "memoria_preferences"]:
+                if tbl in tables and "session_id" in self._columns(con, tbl):
+                    for row in con.execute(f"SELECT session_id, count(*) AS c FROM {tbl} GROUP BY session_id ORDER BY c DESC LIMIT 10"):
+                        all_sessions[str(row["session_id"] or "default")] += int(row["c"] or 0)
+            stats["top_sessions"] = [{"session_id": k, "count": v} for k, v in all_sessions.most_common(10)]
+            return stats
+
+    def _memoria_table(self, table: str, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        """Generische Abfrage einer MEMORIA-Tabelle."""
+        limit = max(1, min(int(limit or 200), 1000))
+        offset = max(0, int(offset or 0))
+        q = (q or "").strip()
+        with self.connect() as con:
+            tables = self._tables(con)
+            if table not in tables:
+                return []
+            cols = self._columns(con, table)
+            select = ", ".join(cols) if cols else "*"
+            # Primary key name differs per table
+            pk = "event_id" if table == "memoria_timelines" else "id"
+            where = "1=1"
+            params: list[Any] = []
+            if q:
+                # Search across text columns
+                text_cols = [c for c in cols if c in ("key", "value", "subject", "predicate", "object", "preference", "instruction", "description", "topic", "context_snippet")]
+                if text_cols:
+                    conditions = [f"COALESCE({c},'') LIKE ?" for c in text_cols]
+                    where = f"({' OR '.join(conditions)})"
+                    params = [f"%{q}%"] * len(text_cols)
+            rows = con.execute(
+                f"SELECT {select} FROM {table} WHERE {where} ORDER BY {pk} DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def memoria_facts(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        return self._memoria_table("memoria_facts", q=q, limit=limit, offset=offset)
+
+    def memoria_timelines(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        return self._memoria_table("memoria_timelines", q=q, limit=limit, offset=offset)
+
+    def memoria_instructions(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        return self._memoria_table("memoria_instructions", q=q, limit=limit, offset=offset)
+
+    def memoria_kg(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        return self._memoria_table("memoria_kg", q=q, limit=limit, offset=offset)
+
+    def memoria_preferences(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        return self._memoria_table("memoria_preferences", q=q, limit=limit, offset=offset)

@@ -49,6 +49,7 @@
         <button data-tab="profile"><span>◌</span>Context Bank</button>
         <button data-tab="lifecycle"><span>◴</span>Lifecycle</button>
         <button data-tab="graph"><span>◎</span>Knowledge Graph</button>
+        <button data-tab="memoria"><span>◈</span>MEMORIA</button>
         <button data-tab="activity"><span>◷</span>History</button>
         <button data-tab="settings"><span>⚙</span>Settings</button>
       </nav>
@@ -253,6 +254,51 @@
           </div>
         </section>
 
+        <section id="memoria" class="tab">
+          <div class="section-head"><h2>MEMORIA</h2><span>structured fact extraction and retrieval</span></div>
+          <div class="section-tabs glass" data-section="memoria">
+            <button data-panel="memoriaOverview" class="active">Overview</button>
+            <button data-panel="memoriaFacts">Facts</button>
+            <button data-panel="memoriaTimelines">Timelines</button>
+            <button data-panel="memoriaInstructions">Instructions</button>
+            <button data-panel="memoriaKg">KG</button>
+            <button data-panel="memoriaPreferences">Preferences</button>
+          </div>
+          <div id="memoriaCards" class="cards"></div>
+          <div id="memoriaOverview" class="subpanel active">
+            <div class="breakdowns compact-breakdowns">
+              <div class="breakdown-card glass"><div class="breakdown-title">Table counts</div><div id="memoriaCounts"></div></div>
+              <div class="breakdown-card glass"><div class="breakdown-title">Top sessions</div><div id="memoriaSessions"></div></div>
+            </div>
+            <div id="memoriaTableCounts" class="list memory-grid"></div>
+          </div>
+          <div id="memoriaFacts" class="subpanel">
+            <div class="section-head mini"><h2>MEMORIA Facts</h2><span>extracted fact triples from conversations</span></div>
+            <div class="toolbar glass"><input id="memoriaFactsQuery" placeholder="Search facts…" /><button id="memoriaFactsSearch" class="primary">Search</button><span id="memoriaFactsCount" class="muted"></span></div>
+            <div id="memoriaFactsList" class="list timeline"></div>
+          </div>
+          <div id="memoriaTimelines" class="subpanel">
+            <div class="section-head mini"><h2>MEMORIA Timelines</h2><span>temporal event sequences</span></div>
+            <div class="toolbar glass"><input id="memoriaTimelinesQuery" placeholder="Search timelines…" /><button id="memoriaTimelinesSearch" class="primary">Search</button><span id="memoriaTimelinesCount" class="muted"></span></div>
+            <div id="memoriaTimelinesList" class="list timeline"></div>
+          </div>
+          <div id="memoriaInstructions" class="subpanel">
+            <div class="section-head mini"><h2>MEMORIA Instructions</h2><span>extracted instructions and guidelines</span></div>
+            <div class="toolbar glass"><input id="memoriaInstructionsQuery" placeholder="Search instructions…" /><button id="memoriaInstructionsSearch" class="primary">Search</button><span id="memoriaInstructionsCount" class="muted"></span></div>
+            <div id="memoriaInstructionsList" class="list timeline"></div>
+          </div>
+          <div id="memoriaKg" class="subpanel">
+            <div class="section-head mini"><h2>MEMORIA KG</h2><span>knowledge graph triples</span></div>
+            <div class="toolbar glass"><input id="memoriaKgQuery" placeholder="Search KG…" /><button id="memoriaKgSearch" class="primary">Search</button><span id="memoriaKgCount" class="muted"></span></div>
+            <div class="table-wrap"><table><thead><tr><th>Subject</th><th>Predicate</th><th>Object</th><th>Confidence</th></tr></thead><tbody id="memoriaKgRows"></tbody></table></div>
+          </div>
+          <div id="memoriaPreferences" class="subpanel">
+            <div class="section-head mini"><h2>MEMORIA Preferences</h2><span>extracted user preferences</span></div>
+            <div class="toolbar glass"><input id="memoriaPreferencesQuery" placeholder="Search preferences…" /><button id="memoriaPreferencesSearch" class="primary">Search</button><span id="memoriaPreferencesCount" class="muted"></span></div>
+            <div id="memoriaPreferencesList" class="list timeline"></div>
+          </div>
+        </section>
+
         <section id="search" class="tab">
           <div class="section-head"><h2>Search</h2><span>results from memories, triples, and consolidations</span></div>
           <div class="toolbar glass"><input id="globalSearchQuery" placeholder="Search everything…" /><button id="globalSearchButton" class="primary">Search</button></div>
@@ -422,6 +468,6 @@
   </div>
 
   <div id="detail" class="drawer hidden"><button id="closeDetail" aria-label="Close detail">×</button><div class="drawer-title">Detail</div><pre id="detailBody"></pre></div>
-  <script src="/static/app.js?v=stream-v2"></script>
+  <script src="/static/app.js?v=memoria-v13"></script>
 </body>
 </html>
