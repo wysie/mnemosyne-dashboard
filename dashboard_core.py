@@ -1654,10 +1654,10 @@ class DashboardStore:
             groups.setdefault(key or "unknown", []).append(e)
         return {"query": q, "group": group, "groups": [{"key": k, "events": v, "count": len(v)} for k, v in groups.items()]}
 
-    # ── MEMORIA Tabellen ──────────────────────────────────────────────
+    # ── MEMORIA tables ─────────────────────────────────────────────────
 
     def memoria_stats(self) -> dict[str, Any]:
-        """Übersicht über alle MEMORIA-Tabellen."""
+        """Overview of all MEMORIA tables."""
         with self.connect() as con:
             tables = self._tables(con)
             stats: dict[str, Any] = {"tables": {}}
@@ -1680,7 +1680,7 @@ class DashboardStore:
             return stats
 
     def _memoria_table(self, table: str, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
-        """Generische Abfrage einer MEMORIA-Tabelle."""
+        """Generic query against a MEMORIA table."""
         limit = max(1, min(int(limit or 200), 1000))
         offset = max(0, int(offset or 0))
         q = (q or "").strip()
