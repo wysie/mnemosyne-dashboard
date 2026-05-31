@@ -70,6 +70,7 @@
         <div class="status-card">
           <div class="status-label">Database</div>
           <div id="dbPath" class="db-path">loading…</div>
+          <div id="bootError" class="state-card state-error hidden" role="alert" aria-live="polite"></div>
         </div>
       </header>
 
@@ -446,6 +447,10 @@
               <div class="breakdown-title">Runtime diagnostics</div>
               <p class="muted">Current dashboard process, launch source, listener PID, and health probe. Useful when launchd restarts the dashboard or a stale PID file makes status look wrong.</p>
               <div id="runtimeDiagnostics" class="diag-grid runtime-diag-grid"></div>
+              <div class="breakdown-title">Frontend boot error</div>
+              <p id="bootErrorStatus" class="muted">No frontend boot errors recorded in this page session.</p>
+              <pre id="bootErrorStack" class="boot-error-stack hidden"></pre>
+              <div class="item-actions"><button id="retryBootstrap" class="primary">Retry load</button><button id="copyBootError">Copy error details</button></div>
             </div>
             <div class="glass settings-card">
               <div class="breakdown-title">Mnemosyne 3.x sync diagnostics</div>

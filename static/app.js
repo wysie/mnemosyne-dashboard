@@ -14,6 +14,7 @@ let liveMemoryLoading = false;
 let liveMemoryObserver = null;
 let currentRoute = { tab: 'overview' };
 let applyingHistory = false;
+let lastBootError = null;
 let bulkSelection = new Set();
 let reviewSelection = new Set();
 let selectedReviewQueue = 'contaminated';
@@ -49,6 +50,83 @@ async function api(path, options={}){
 async function postJson(path, body){ return api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body || {})}); }
 function showLogin(){ $('#loginOverlay')?.classList.remove('hidden'); }
 function hideLogin(){ $('#loginOverlay')?.classList.add('hidden'); }
+function bootErrorPayload(){
+  return lastBootError ? JSON.stringify(lastBootError, null, 2) : '';
+}
+function renderBootErrorStatus(){
+  const status = $('#bootErrorStatus');
+  const stack = $('#bootErrorStack');
+  const copy = $('#copyBootError');
+  if(!status || !stack) return;
+  if(!lastBootError){
+    status.textContent = 'No frontend boot errors recorded in this page session.';
+    stack.textContent = '';
+    stack.classList.add('hidden');
+    if(copy) copy.disabled = true;
+    return;
+  }
+  status.textContent = `${lastBootError.time} · ${lastBootError.message}`;
+  stack.textContent = lastBootError.stack || lastBootError.message;
+  stack.classList.remove('hidden');
+  if(copy) copy.disabled = false;
+}
+function setBootError(title, body=''){
+  const el = $('#bootError');
+  if(!el) return;
+  el.innerHTML = `<strong>${esc(title)}</strong>${body ? `<p>${esc(body)}</p>` : ''}<div class="item-actions"><button id="bootErrorRetry" class="primary">Retry load</button><button id="bootErrorCopy">Copy error details</button></div>`;
+  el.classList.remove('hidden');
+  $('#bootErrorRetry')?.addEventListener('click', () => bootstrapDashboard());
+  $('#bootErrorCopy')?.addEventListener('click', () => copyBootErrorDetails());
+}
+function clearBootError(){
+  const el = $('#bootError');
+  if(!el) return;
+  el.innerHTML = '';
+  el.classList.add('hidden');
+}
+function copyBootErrorDetails(){
+  if(!lastBootError) return;
+  showSelectableCopy('Boot error details', bootErrorPayload());
+}
+async function handleInitError(error){
+  console.error('Dashboard bootstrap failed', error);
+  lastBootError = {
+    time: new Date().toISOString(),
+    message: error?.message || String(error || 'Unknown startup error'),
+    stack: error?.stack || '',
+  };
+  let status = null;
+  try {
+    const r = await fetch('/api/auth/status', { cache: 'no-store' });
+    status = await r.json();
+    if(r.ok) authState = status;
+  } catch {}
+  const authRequired = !!(status && status.auth_enabled && !status.authenticated);
+  if(authRequired){
+    clearBootError();
+    renderBootErrorStatus();
+    showLogin();
+    return;
+  }
+  hideLogin();
+  setBootError('Dashboard failed to finish loading.', lastBootError.message);
+  renderBootErrorStatus();
+}
+async function bootstrapDashboard(){
+  clearBootError();
+  const route = urlToRoute();
+  const s = await refreshAuthState();
+  if(s.auth_enabled && !s.authenticated){
+    renderBootErrorStatus();
+    showLogin();
+    return;
+  }
+  hideLogin();
+  await loadStats();
+  await initRealtime();
+  if(route.tab !== 'overview' || route.drawer) await applyRoute(route);
+  renderBootErrorStatus();
+}
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function shortId(value, head=8, tail=6){ const s = String(value || '').trim(); return s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s; }
 function prettyTime(value){
@@ -89,6 +167,7 @@ function memoryItem(item, opts={}){ const role = roleOf(item.content); const rol
 function canonicalTab(tab){
   if(tab === 'constellation') return 'visualiserlegacy';
   if(tab === 'visualiser3d') return 'visualiser';
+  if(tab === 'history') return 'activity';
   return tab || 'overview';
 }
 function routeTabState(tab=currentRoute.tab || 'overview'){ return { tab: canonicalTab(tab) }; }
@@ -299,13 +378,13 @@ function showPanel(sectionId, panelId){
   section.querySelectorAll('.section-tabs button').forEach(button => button.classList.toggle('active', button.dataset.panel === panelId));
 }
 function sectionFor(name){
-  return ({ visualiser:'visualiser3d', palace:'memoryPalace', visualiserlegacy:'constellation', constellation:'constellation', recall:'explore', memories:'explore', timelineView:'activity', consolidations:'activity', triples:'graph', todayAdded:'today', todayRecalled:'today', todayTriples:'today', todayConsolidations:'today' })[name] || name;
+  return ({ visualiser:'visualiser3d', palace:'memoryPalace', visualiserlegacy:'constellation', constellation:'constellation', recall:'explore', memories:'explore', history:'activity', timelineView:'activity', consolidations:'activity', triples:'graph', todayAdded:'today', todayRecalled:'today', todayTriples:'today', todayConsolidations:'today' })[name] || name;
 }
 function defaultPanelFor(section){
   return ({ explore:'exploreMemories', activity:'activityTimeline', graph:'graphGraph', today:'todayAdded' })[section];
 }
 function panelFor(name){
-  return ({ memories:'exploreMemories', recall:'exploreRecall', timelineView:'activityTimeline', consolidations:'activityConsolidations', graph:'graphGraph', triples:'graphTriples', today:'todayAdded', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations' })[name] || defaultPanelFor(name);
+  return ({ memories:'exploreMemories', recall:'exploreRecall', history:'activityTimeline', timelineView:'activityTimeline', consolidations:'activityConsolidations', graph:'graphGraph', triples:'graphTriples', today:'todayAdded', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations' })[name] || defaultPanelFor(name);
 }
 function stopCanvasVisualiserLoop(){
   if(constellationScene.frame) cancelAnimationFrame(constellationScene.frame);
@@ -3638,6 +3717,8 @@ $('#viewAuditLog').onclick = async () => {
   try { const r = await api('/api/admin/audit?limit=50'); showDetail(r.items, 'Memory audit log'); }
   catch(e){ $('#memoryAdminStatus').textContent = e.message; }
 };
+$('#retryBootstrap').onclick = () => bootstrapDashboard().catch(handleInitError);
+$('#copyBootError').onclick = copyBootErrorDetails;
 $('#logoutAuth').onclick = async () => { await postJson('/api/auth/logout', {}); showLogin(); };
 function toggleTheme(){ setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'); }
 $('#themeToggle').onclick = toggleTheme;
@@ -3647,11 +3728,5 @@ window.addEventListener('popstate', e => applyRoute(e.state || urlToRoute()));
 initTheme();
 const initialRoute = urlToRoute();
 pushRoute(initialRoute, true);
-refreshAuthState().then(async s => {
-  if(s.auth_enabled && !s.authenticated) showLogin();
-  else {
-    await loadStats();
-    await initRealtime();
-    if(initialRoute.tab !== 'overview' || initialRoute.drawer) await applyRoute(initialRoute);
-  }
-}).catch(() => showLogin());
+renderBootErrorStatus();
+bootstrapDashboard().catch(handleInitError);
