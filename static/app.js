@@ -58,7 +58,7 @@ function prettyTime(value){
   return new Intl.DateTimeFormat(undefined, {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}).format(d);
 }
 function meta(item, opts={}){
-  const status = item.status || 'active';
+  const status = String(item.status || 'active').toLowerCase();
   const scope = String(item.scope || '').trim();
   const session = String(item.session_id || '').trim();
   const rawTime = item.timestamp || item.created_at || '';
@@ -66,13 +66,18 @@ function meta(item, opts={}){
   const kind = item.memory_kind || item.tier || item.source || 'memory';
   const veracity = String(item.veracity || 'unknown').toLowerCase();
   const lifecycle = item.degradation_label ? `${item.degradation_label}${item.degradation_tier ? ` · T${item.degradation_tier}` : ''}` : '';
-  const scopeBadge = scope && scope !== 'session' ? `<span class="badge" title="scope: ${esc(scope)}">${esc(scope)}</span>` : '';
-  const sessionBadge = opts.sessionLink !== false && session && session !== 'default' ? `<button type="button" class="badge session-link" data-session="${esc(session)}" title="Open session: ${esc(session)}">session ${esc(shortId(session))}</button>` : '';
-  const timeBadge = timeLabel ? `<span class="meta-time" title="${esc(rawTime)}">${esc(timeLabel)}</span>` : '';
-  const veracityBadge = `<span class="badge trust-${esc(veracity)}" title="veracity: ${esc(veracity)} · recall weight ${Number(item.trust_weight ?? 0).toFixed(2)}">${esc(veracity)}</span>`;
-  const lifecycleBadge = lifecycle ? `<span class="badge lifecycle-${esc(item.degradation_label)}" title="degradation tier: ${esc(item.degradation_tier)} · recall weight ${Number(item.degradation_weight ?? 1).toFixed(2)}">${esc(lifecycle)}</span>` : '';
-  return `<div class="meta"><span class="badge">${esc(kind)}</span><span class="badge status-${esc(status)}">${esc(status)}</span>${veracityBadge}${lifecycleBadge}<span class="badge">importance ${Number(item.importance ?? 0).toFixed(2)}</span>${scopeBadge}${sessionBadge}${timeBadge}</div>`;
+  const importance = Number(item.importance ?? 0);
+  const pills = [`<span class="badge kind-badge" title="memory type: ${esc(kind)}">${esc(kind)}</span>`];
+  if(status && status !== 'active') pills.push(`<span class="badge status-${esc(status)}" title="status: ${esc(status)}">${esc(status)}</span>`);
+  if(veracity && veracity !== 'unknown') pills.push(`<span class="badge trust-${esc(veracity)}" title="veracity: ${esc(veracity)} · recall weight ${Number(item.trust_weight ?? 0).toFixed(2)}">${esc(veracity)}</span>`);
+  if(lifecycle) pills.push(`<span class="badge lifecycle-${esc(item.degradation_label)}" title="degradation tier: ${esc(item.degradation_tier)} · recall weight ${Number(item.degradation_weight ?? 1).toFixed(2)}">${esc(lifecycle)}</span>`);
+  if(importance > 0) pills.push(`<span class="badge importance-badge" title="importance: ${importance.toFixed(2)}">${importance.toFixed(2)}</span>`);
+  if(scope && scope !== 'session') pills.push(`<span class="badge" title="scope: ${esc(scope)}">${esc(scope)}</span>`);
+  if(opts.sessionLink !== false && session && session !== 'default') pills.push(`<button type="button" class="badge session-link" data-session="${esc(session)}" title="Open session: ${esc(session)}">${esc(shortId(session))}</button>`);
+  if(timeLabel) pills.push(`<span class="meta-time" title="${esc(rawTime)}">${esc(timeLabel)}</span>`);
+  return `<div class="meta">${pills.join('')}</div>`;
 }
+function cleanContent(content){ return String(content || '').replace(/^\[(USER|ASSISTANT|SYSTEM)\]\s*/i, ''); }
 function roleOf(content){ const m = String(content || '').match(/^\[(USER|ASSISTANT|SYSTEM)\]/i); return m ? m[1].toLowerCase() : ''; }
 function liveEventMeta(item){
   const eventType = String(item.live_event_type || item.event_type || '').toUpperCase();
@@ -85,7 +90,7 @@ function liveEventMeta(item){
   };
   return map[eventType] || ['', ''];
 }
-function memoryItem(item, opts={}){ const role = roleOf(item.content); const roleBadge = role ? `<span class="role role-${role}">${role}</span>` : ''; const selectedSet = opts.selectedSet || bulkSelection; const checkClass = opts.checkClass || 'memory-check'; const selectable = opts.selectable ? `<label class="memory-select" title="Select memory"><input type="checkbox" class="${esc(checkClass)}" data-id="${esc(item.id)}" ${selectedSet.has(item.id) ? 'checked' : ''} /></label>` : ''; const [liveClass, liveLabel, liveBadgeClass] = liveEventMeta(item); const liveBadge = liveLabel ? `<span class="badge live-badge ${esc(liveBadgeClass)}">${esc(liveLabel)}</span>` : ''; return `<div class="item memory-card ${role ? 'has-role' : ''} ${opts.selectable ? 'selectable' : ''} ${liveClass ? `live-${esc(liveClass)}` : ''}" data-id="${esc(item.id)}">${selectable}${meta(item)}${liveBadge}${roleBadge}<div class="content">${esc(item.content)}</div></div>`; }
+function memoryItem(item, opts={}){ const role = roleOf(item.content); const roleBadge = role ? `<span class="role role-${role}">${role}</span>` : ''; const selectedSet = opts.selectedSet || bulkSelection; const checkClass = opts.checkClass || 'memory-check'; const selectable = opts.selectable ? `<label class="memory-select" title="Select memory"><input type="checkbox" class="${esc(checkClass)}" data-id="${esc(item.id)}" ${selectedSet.has(item.id) ? 'checked' : ''} /></label>` : ''; const [liveClass, liveLabel, liveBadgeClass] = liveEventMeta(item); const liveBadge = liveLabel ? `<span class="badge live-badge ${esc(liveBadgeClass)}">${esc(liveLabel)}</span>` : ''; const displayContent = cleanContent(item.content); return `<div class="item memory-card ${role ? 'has-role' : ''} ${opts.selectable ? 'selectable' : ''} ${liveClass ? `live-${esc(liveClass)}` : ''}" data-id="${esc(item.id)}">${selectable}<div class="item-topline">${roleBadge}${liveBadge}</div>${meta(item)}<div class="content">${esc(displayContent)}</div></div>`; }
 function canonicalTab(tab){
   if(tab === 'constellation') return 'visualiserlegacy';
   if(tab === 'visualiser3d') return 'visualiser';
