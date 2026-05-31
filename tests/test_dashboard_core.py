@@ -544,6 +544,28 @@ def test_realtime_event_snapshot_orders_newest_first(tmp_path):
     assert timestamps == sorted(timestamps, reverse=True)
     assert events[0]['memory_id'] == 'e2'
 
+
+def test_static_ui_boot_error_diagnostics_and_history_alias_are_present():
+    html = (ROOT / 'static' / 'index.html').read_text()
+    js = (ROOT / 'static' / 'app.js').read_text()
+    css = (ROOT / 'static' / 'style.css').read_text()
+
+    assert 'id="bootError"' in html
+    assert 'id="bootErrorStatus"' in html
+    assert 'id="bootErrorStack"' in html
+    assert 'id="retryBootstrap"' in html
+    assert 'id="copyBootError"' in html
+    assert "if(tab === 'history') return 'activity';" in js
+    assert "history:'activityTimeline'" in js
+    assert 'function handleInitError(error)' in js
+    assert "fetch('/api/auth/status'" in js
+    assert "setBootError('Dashboard failed to finish loading.'" in js
+    assert "$('#retryBootstrap').onclick = () => bootstrapDashboard().catch(handleInitError);" in js
+    assert "$('#copyBootError').onclick = copyBootErrorDetails;" in js
+    assert '.hidden{display:none!important}' in css
+    assert '.boot-error-stack{' in css
+
+
 def test_static_ui_exposes_v23_trust_and_lifecycle_controls():
     html = (ROOT / 'static' / 'index.html').read_text()
     js = (ROOT / 'static' / 'app.js').read_text()
