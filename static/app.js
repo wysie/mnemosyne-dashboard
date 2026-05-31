@@ -1988,7 +1988,7 @@ function drawGraph(g){
   graphState.nodes = nodes; graphState.byId = byId;
   const edges = g.edges.filter(e=>byId[e.source]&&byId[e.target]).slice(0,300);
   graphState.edges = edges;
-  if(!nodes.length){ svg.insertAdjacentHTML('beforeend', '<text x="500" y="325" text-anchor="middle" class="nodeText">No triples match this graph filter.</text>'); graphInspectorDefault(); bindGraphPanZoom(); return; }
+  if(!nodes.length){ svg.insertAdjacentHTML('beforeend', '<text x="500" y="325" text-anchor="middle" class="nodeText">No triples match this graph filter. Add facts with mnemosyne_triple_add or mnemosyne_remember(... extract=true).</text>'); graphInspectorDefault(); bindGraphPanZoom(); return; }
   for(const e of edges){ const s=byId[e.source], t=byId[e.target];
     const line = document.createElementNS('http://www.w3.org/2000/svg','line'); line.setAttribute('x1',s.x);line.setAttribute('y1',s.y);line.setAttribute('x2',t.x);line.setAttribute('y2',t.y);line.setAttribute('class','edge'); line.dataset.id = e.id; line.onclick = () => inspectEdge(e); vp.appendChild(line);
     const label = document.createElementNS('http://www.w3.org/2000/svg','text'); label.textContent=e.predicate; label.setAttribute('x',(s.x+t.x)/2);label.setAttribute('y',(s.y+t.y)/2);label.setAttribute('class','edgeLabel'); label.dataset.id = e.id; label.onclick = () => inspectEdge(e); vp.appendChild(label);

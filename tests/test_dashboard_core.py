@@ -560,6 +560,7 @@ def test_static_ui_boot_error_diagnostics_and_history_alias_are_present():
     assert 'function handleInitError(error)' in js
     assert "fetch('/api/auth/status'" in js
     assert "setBootError('Dashboard failed to finish loading.'" in js
+    assert "mnemosyne_triple_add or mnemosyne_remember(... extract=true)" in js
     assert "$('#retryBootstrap').onclick = () => bootstrapDashboard().catch(handleInitError);" in js
     assert "$('#copyBootError').onclick = copyBootErrorDetails;" in js
     assert '.hidden{display:none!important}' in css
