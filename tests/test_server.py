@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import threading
 import urllib.error
@@ -14,6 +15,10 @@ sys.path.insert(0, str(ROOT))
 from test_dashboard_core import make_db  # noqa: E402
 
 from server import Handler, ThreadingHTTPServer  # noqa: E402
+
+
+def _resolved(path: Path) -> str:
+    return str(path.resolve())
 
 
 def _request(url: str, method: str = "GET", body: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> tuple[int, dict[str, str], bytes]:
@@ -207,3 +212,99 @@ def test_admin_memory_mutation_endpoints_allow_localhost_admin_without_auth_and_
         assert audit[0]["action"] == "supersede"
     finally:
         server.close()
+
+
+def test_databases_endpoint_lists_active_and_discovered_brains(tmp_path, monkeypatch):
+    server = ServerHarness(tmp_path, monkeypatch)
+    try:
+        # Create per-profile brains under HERMES_HOME so auto-discovery finds them.
+        home = tmp_path / "hermes"
+        pm = home / "profiles" / "project-manager" / "mnemosyne" / "data" / "mnemosyne.db"
+        make_db(_mkparents(pm))
+
+        status, _headers, body = _request(f"{server.base}/api/databases")
+        payload = json.loads(body)
+        assert status == 200
+        assert "databases" in payload and "active" in payload
+        by_path = {d["path"]: d for d in payload["databases"]}
+        assert by_path[_resolved(server.db)]["active"] is True
+        assert by_path[_resolved(pm)]["label"] == "project-manager"
+        assert all("size_bytes" in d for d in payload["databases"])
+    finally:
+        server.close()
+
+
+def _mkparents(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_databases_select_hot_swaps_active_brain(tmp_path, monkeypatch):
+    server = ServerHarness(tmp_path, monkeypatch)
+    try:
+        status, _headers, body = _request(f"{server.base}/api/stats")
+        assert json.loads(body)["counts"]["working_memory"] == 4
+
+        home = tmp_path / "hermes"
+        pm = home / "profiles" / "project-manager" / "mnemosyne" / "data" / "mnemosyne.db"
+        make_db(_mkparents(pm))
+        # Make this brain distinguishable from the active one.
+        con = sqlite3.connect(pm)
+        con.execute(
+            "INSERT INTO working_memory(id,content,source,timestamp,session_id,importance,scope) VALUES (?,?,?,?,?,?,?)",
+            ("w5", "extra brain memory", "preference", "2026-06-01T00:00:00", "s9", 0.5, "global"),
+        )
+        con.commit()
+        con.close()
+
+        status, _headers, body = _request(
+            f"{server.base}/api/databases/select", method="POST", body={"path": str(pm)},
+        )
+        payload = json.loads(body)
+        assert status == 200
+        assert payload["ok"] is True
+        assert payload["active"] == _resolved(pm)
+        assert payload["persisted"] is False
+
+        status, _headers, body = _request(f"{server.base}/api/stats")
+        assert json.loads(body)["counts"]["working_memory"] == 5
+    finally:
+        server.close()
+
+
+def test_databases_select_rejects_path_outside_allowlist(tmp_path, monkeypatch):
+    server = ServerHarness(tmp_path, monkeypatch)
+    try:
+        status, _headers, body = _request(
+            f"{server.base}/api/databases/select", method="POST", body={"path": "/etc/passwd"},
+        )
+        payload = json.loads(body)
+        assert status == 400
+        assert payload["ok"] is False
+        assert "allowlist" in payload["error"]
+
+        # Active DB unchanged.
+        status, _headers, body = _request(f"{server.base}/api/stats")
+        assert json.loads(body)["counts"]["working_memory"] == 4
+    finally:
+        server.close()
+
+
+def test_databases_select_requires_auth_when_enabled(tmp_path, monkeypatch):
+    server = ServerHarness(tmp_path, monkeypatch)
+    try:
+        status, _headers, _body = _request(
+            f"{server.base}/api/config",
+            method="POST",
+            body={"auth_enabled": True, "password": "hunter2"},
+        )
+        assert status == 200
+
+        status, _headers, body = _request(
+            f"{server.base}/api/databases/select", method="POST", body={"path": str(server.db)},
+        )
+        assert status == 401
+        assert b"auth required" in body
+    finally:
+        server.close()
+

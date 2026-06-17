@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a database selector on the Overview page to switch between Mnemosyne databases at runtime without restarting.
+- Discover Hermes profile brains automatically, or list databases explicitly with the new optional `db_paths` config; switching stays read-only and limited to the discovered set.
+
 ## 0.14.0
 
 - Restore `?tab=history` compatibility by aliasing old history deep links to the current Activity view.

@@ -66,6 +66,7 @@ class DashboardConfig:
     password_salt: str = ""
     auth_secret: str = ""
     memory_admin_enabled: bool = False
+    db_paths: tuple[str, ...] = ()
 
     @property
     def bind_url(self) -> str:
@@ -114,6 +115,7 @@ def _defaults() -> dict[str, Any]:
         "password_salt": "",
         "auth_secret": secrets.token_urlsafe(32),
         "memory_admin_enabled": False,
+        "db_paths": [],
     }
 
 
@@ -123,6 +125,24 @@ def _bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
     return bool(value)
+
+
+def _db_paths(value: Any) -> tuple[str, ...]:
+    if not value:
+        return ()
+    if isinstance(value, str):
+        value = [value]
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in value:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        expanded = str(Path(text).expanduser())
+        if expanded not in seen:
+            seen.add(expanded)
+            out.append(expanded)
+    return tuple(out)
 
 
 def _validate(raw: dict[str, Any]) -> DashboardConfig:
@@ -147,6 +167,7 @@ def _validate(raw: dict[str, Any]) -> DashboardConfig:
         password_salt=str(merged.get("password_salt") or ""),
         auth_secret=auth_secret,
         memory_admin_enabled=_bool(merged.get("memory_admin_enabled", False)),
+        db_paths=_db_paths(merged.get("db_paths")),
     )
 
 
@@ -215,6 +236,7 @@ def public_config(cfg: DashboardConfig | None = None) -> dict[str, Any]:
         "local_url": cfg.local_url,
         "lan_url": f"http://{lan}:{cfg.port}/" if lan else "",
         "memory_admin_enabled": cfg.memory_admin_enabled,
+        "db_paths": list(cfg.db_paths),
     }
 
 
