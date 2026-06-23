@@ -1740,3 +1740,95 @@ class DashboardStore:
 
     def memoria_preferences(self, q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
         return self._memoria_table("memoria_preferences", q=q, limit=limit, offset=offset)
+
+    def persona_facts(self, tier: str = "", topic: str = "", q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        """Query L3 persona facts from memoria_persona."""
+        limit = max(1, min(int(limit or 200), 1000))
+        offset = max(0, int(offset or 0))
+        q = (q or "").strip()
+        tier = (tier or "").strip()
+        topic = (topic or "").strip()
+        with self.connect() as con:
+            tables = self._tables(con)
+            if "memoria_persona" not in tables:
+                return []
+            where = ["1=1"]
+            params: list[Any] = []
+            if tier:
+                where.append("tier = ?")
+                params.append(tier)
+            if topic:
+                where.append("topic = ?")
+                params.append(topic)
+            if q:
+                where.append("(COALESCE(content,'') LIKE ? OR COALESCE(topic,'') LIKE ?)")
+                params.extend([f"%{q}%", f"%{q}%"])
+            rows = con.execute(
+                f"SELECT id, session_id, tier, topic, content, confidence, source_memory_id, "
+                f"created_at, last_reinforced_at, reinforcement_count, promotion_reason "
+                f"FROM memoria_persona WHERE {' AND '.join(where)} "
+                f"ORDER BY CASE tier WHEN 'permanent' THEN 1 WHEN 'long_term' THEN 2 WHEN 'working' THEN 3 ELSE 4 END, "
+                f"reinforcement_count DESC, id DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def persona_stats(self) -> dict[str, Any]:
+        """Aggregate counts per persona tier and topic."""
+        with self.connect() as con:
+            tables = self._tables(con)
+            if "memoria_persona" not in tables:
+                return {"total": 0, "by_tier": [], "by_topic": []}
+            total = con.execute("SELECT COUNT(*) FROM memoria_persona").fetchone()[0]
+            by_tier = [dict(r) for r in con.execute(
+                "SELECT tier, COUNT(*) AS count FROM memoria_persona GROUP BY tier ORDER BY count DESC"
+            )]
+            by_topic = [dict(r) for r in con.execute(
+                "SELECT topic, COUNT(*) AS count FROM memoria_persona GROUP BY topic ORDER BY count DESC LIMIT 20"
+            )]
+            return {"total": total, "by_tier": by_tier, "by_topic": by_topic}
+
+    def canonical_facts(self, owner_id: str = "", category: str = "", q: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        """Query owner-scoped canonical facts."""
+        limit = max(1, min(int(limit or 200), 1000))
+        offset = max(0, int(offset or 0))
+        q = (q or "").strip()
+        owner_id = (owner_id or "").strip()
+        category = (category or "").strip()
+        with self.connect() as con:
+            tables = self._tables(con)
+            if "canonical_facts" not in tables:
+                return []
+            where = ["valid_until IS NULL"]
+            params: list[Any] = []
+            if owner_id:
+                where.append("owner_id = ?")
+                params.append(owner_id)
+            if category:
+                where.append("category = ?")
+                params.append(category)
+            if q:
+                where.append("(COALESCE(owner_id,'') LIKE ? OR COALESCE(category,'') LIKE ? OR COALESCE(name,'') LIKE ? OR COALESCE(body,'') LIKE ?)")
+                params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
+            rows = con.execute(
+                f"SELECT id, owner_id, category, name, body, source, confidence, version, valid_from, created_at "
+                f"FROM canonical_facts WHERE {' AND '.join(where)} "
+                f"ORDER BY owner_id, category, name LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def canonical_stats(self) -> dict[str, Any]:
+        """Aggregate canonical fact counts per owner and category."""
+        with self.connect() as con:
+            tables = self._tables(con)
+            if "canonical_facts" not in tables:
+                return {"total": 0, "by_owner": [], "by_category": []}
+            total = con.execute("SELECT COUNT(*) FROM canonical_facts WHERE valid_until IS NULL").fetchone()[0]
+            by_owner = [dict(r) for r in con.execute(
+                "SELECT owner_id, COUNT(*) AS count FROM canonical_facts WHERE valid_until IS NULL GROUP BY owner_id ORDER BY count DESC"
+            )]
+            by_category = [dict(r) for r in con.execute(
+                "SELECT category, COUNT(*) AS count FROM canonical_facts WHERE valid_until IS NULL GROUP BY category ORDER BY count DESC LIMIT 20"
+            )]
+            return {"total": total, "by_owner": by_owner, "by_category": by_category}
