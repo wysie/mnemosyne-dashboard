@@ -398,6 +398,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"items": self.store.memoria_kg(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
             if path == "/api/memoria/preferences":
                 return self._send_json({"items": self.store.memoria_preferences(q=q.get("q", ""), limit=_safe_int(q.get("limit"), 200, maximum=1000), offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000))})
+            if path == "/api/persona":
+                return self._send_json({
+                    "items": self.store.persona_facts(
+                        tier=q.get("tier", ""), topic=q.get("topic", ""), q=q.get("q", ""),
+                        limit=_safe_int(q.get("limit"), 200, maximum=1000),
+                        offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000),
+                    ),
+                    "stats": self.store.persona_stats(),
+                })
+            if path == "/api/canonical":
+                return self._send_json({
+                    "items": self.store.canonical_facts(
+                        owner_id=q.get("owner_id", ""), category=q.get("category", ""), q=q.get("q", ""),
+                        limit=_safe_int(q.get("limit"), 200, maximum=1000),
+                        offset=_safe_int(q.get("offset"), 0, minimum=0, maximum=100000),
+                    ),
+                    "stats": self.store.canonical_stats(),
+                })
             return self._send_json({"error": "not found"}, 404)
         except (BrokenPipeError, ConnectionResetError):
             return
