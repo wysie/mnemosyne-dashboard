@@ -13,12 +13,98 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from config import auth_cookie_value, data_dir, effective_config, public_config, save_config, verify_password
+import sqlite3
+
+from config import auth_cookie_value, data_dir, effective_config, hermes_home, public_config, save_config, verify_password
 from dashboard_core import DashboardStore, default_db_path
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 MAX_JSON_BODY_BYTES = 64 * 1024
+
+
+# ───────────────────────── Profile discovery ─────────────────────────
+# Auto-discovers all Hermes profile Mnemosyne DBs on the filesystem.
+# The default profile keeps memories in the top-level DB; isolated profiles
+# store them in a per-profile bank sub-DB.
+
+def _count_working_memory(db_path: Path) -> int:
+    """Quick SELECT COUNT(*) FROM working_memory, returns 0 on any error."""
+    try:
+        uri = f"file:{db_path}?mode=ro"
+        con = sqlite3.connect(uri, uri=True, timeout=3)
+        row = con.execute("SELECT count(*) FROM working_memory").fetchone()
+        con.close()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def _is_valid_mnemosyne_db(db_path: Path) -> bool:
+    """True if the file exists and has a working_memory table."""
+    if not db_path or not db_path.exists() or not db_path.is_file():
+        return False
+    try:
+        uri = f"file:{db_path}?mode=ro"
+        con = sqlite3.connect(uri, uri=True, timeout=3)
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        con.close()
+        return "working_memory" in tables
+    except Exception:
+        return False
+
+
+def _hermes_root() -> Path:
+    """Resolve the actual ~/.hermes root, even when HERMES_HOME points to a
+    profile subdirectory (e.g. ~/.hermes/profiles/coder inside a profile session).
+    """
+    home = hermes_home()
+    # If home contains a 'profiles' dir, it's the real root.
+    if (home / "profiles").is_dir():
+        return home
+    # If home looks like ~/.hermes/profiles/<name>, go up two levels.
+    if home.parent.name == "profiles" and home.parent.parent.name == ".hermes":
+        return home.parent.parent
+    # Fallback: check if HERMES_HOME itself is ~/.hermes
+    return home
+
+
+def discover_profiles() -> list[dict[str, Any]]:
+    """Scan the filesystem for all Hermes profile Mnemosyne DBs.
+
+    Returns a list of {name, db_path, size_bytes, memory_count} dicts,
+    sorted by name. Discovery is generic — no hardcoded profile names.
+    """
+    home = _hermes_root()
+    profiles: list[dict[str, Any]] = []
+
+    # 1. Default profile DB (top-level, no bank isolation)
+    default_db = home / "mnemosyne" / "data" / "mnemosyne.db"
+    if _is_valid_mnemosyne_db(default_db):
+        profiles.append({
+            "name": "default",
+            "db_path": str(default_db),
+            "size_bytes": default_db.stat().st_size,
+            "memory_count": _count_working_memory(default_db),
+        })
+
+    # 2. Isolated profile bank DBs: ~/.hermes/profiles/<profile>/mnemosyne/data/banks/<profile>/mnemosyne.db
+    profiles_dir = home / "profiles"
+    if profiles_dir.is_dir():
+        for entry in sorted(profiles_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            profile_name = entry.name
+            bank_db = entry / "mnemosyne" / "data" / "banks" / profile_name / "mnemosyne.db"
+            if _is_valid_mnemosyne_db(bank_db):
+                profiles.append({
+                    "name": profile_name,
+                    "db_path": str(bank_db),
+                    "size_bytes": bank_db.stat().st_size,
+                    "memory_count": _count_working_memory(bank_db),
+                })
+
+    return profiles
 
 
 def _project_version() -> str:
@@ -319,6 +405,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_file(STATIC / rel)
             if not self._require_auth(path):
                 return
+            if path == "/api/profiles":
+                return self._send_json({"profiles": discover_profiles()})
+            if path == "/api/profile/active":
+                current_db = str(getattr(self.server, "db_path", default_db_path()))
+                name = "unknown"
+                for p in discover_profiles():
+                    if p["db_path"] == current_db:
+                        name = p["name"]
+                        break
+                return self._send_json({"name": name, "db_path": current_db})
             if path == "/api/auth/status":
                 return self._send_json(self._auth_status())
             if path == "/api/health":
@@ -421,6 +517,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": False, "error": "invalid password"}, 403)
             if not self._require_auth(path):
                 return
+            if path == "/api/profile/switch":
+                name = str(body.get("name") or "").strip()
+                if not name:
+                    return self._send_json({"ok": False, "error": "profile name required"}, 400)
+                profile = None
+                for p in discover_profiles():
+                    if p["name"] == name:
+                        profile = p
+                        break
+                if not profile:
+                    return self._send_json({"ok": False, "error": f"profile '{name}' not found"}, 404)
+                db_path = Path(profile["db_path"])
+                if not _is_valid_mnemosyne_db(db_path):
+                    return self._send_json({"ok": False, "error": f"'{db_path}' is not a valid Mnemosyne DB"}, 400)
+                self.server.db_path = db_path
+                return self._send_json({"ok": True, "profile": profile})
             if path == "/api/auth/logout":
                 return self._send_json({"ok": True}, headers={"Set-Cookie": f"{AUTH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly"})
             if path == "/api/config":

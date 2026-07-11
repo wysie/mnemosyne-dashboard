@@ -6,7 +6,7 @@
   <title>Mnemosyne Dashboard</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/brand-fonts.css" />
-  <link rel="stylesheet" href="/static/style.css?v=stream-v2" />
+  <link rel="stylesheet" href="/static/style.css?v=profile-switcher-v1" />
 </head>
 <body>
   <div class="aurora aurora-one"></div>
@@ -34,6 +34,11 @@
           <div class="brand-sub">Hermes Memory</div>
         </div>
       </button>
+      <div class="profile-switcher glass-mini">
+        <label for="profileSelect" class="profile-switcher-label">Profile</label>
+        <select id="profileSelect" aria-label="Switch Hermes profile"></select>
+        <span id="profileBadge" class="profile-badge-active"></span>
+      </div>
       <div class="menu-search glass-mini">
         <input id="menuSearchQuery" placeholder="Search memory…" />
         <button id="menuSearchButton" class="primary" aria-label="Search memory">⌕</button>
@@ -478,6 +483,6 @@
   </div>
 
   <div id="detail" class="drawer hidden"><button id="closeDetail" aria-label="Close detail">×</button><div class="drawer-title">Detail</div><pre id="detailBody"></pre></div>
-  <script src="/static/app.js?v=stream-v2"></script>
+  <script src="/static/app.js?v=profile-switcher-v1"></script>
 </body>
 </html>
