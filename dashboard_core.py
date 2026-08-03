@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.metadata
 import json
 import os
@@ -10,7 +11,7 @@ import uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 try:
     from mnemosyne.core import PatternDetector
@@ -91,6 +92,21 @@ class DashboardStore:
         con.create_function("REGEXP", 2, self._regexp)
         con.execute("PRAGMA busy_timeout=5000")
         return con
+
+    @contextlib.contextmanager
+    def session(self, *, rw: bool = False) -> Iterator[sqlite3.Connection]:
+        """sqlite3's built-in ``with con:`` commits/rolls back but NEVER closes
+        the connection, leaking an fd per request. This mirrors the commit /
+        rollback semantics and additionally closes the connection on exit."""
+        con = self.connect_rw() if rw else self.connect()
+        try:
+            yield con
+            con.commit()
+        except BaseException:
+            con.rollback()
+            raise
+        finally:
+            con.close()
 
     @staticmethod
     def _tables(con: sqlite3.Connection) -> set[str]:
@@ -252,7 +268,7 @@ class DashboardStore:
     def _realtime_event_rows(self, limit: int = 25, include_inactive: bool = False) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit or 25), 200))
         events: list[dict[str, Any]] = []
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             for table, memory_kind in (("working_memory", "working"), ("episodic_memory", "episodic")):
                 if table not in tables:
@@ -355,7 +371,7 @@ class DashboardStore:
             stat = path.stat()
             info["size_bytes"] = stat.st_size
             info["modified_at"] = __import__("datetime").datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
-            with self.connect() as con:
+            with self.session() as con:
                 tables = sorted(self._tables(con))
                 info["tables"] = tables
                 info["table_errors"] = {}
@@ -373,7 +389,7 @@ class DashboardStore:
         return info
 
     def stats(self) -> dict[str, Any]:
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             counts: dict[str, int] = {}
             for table in ["working_memory", "episodic_memory", "memories", "triples", "consolidation_log", "scratchpad"]:
@@ -547,7 +563,7 @@ class DashboardStore:
             wanted.append(("episodic_memory", "episodic"))
 
         rows: list[dict[str, Any]] = []
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             for table, memory_kind in wanted:
                 if table not in tables:
@@ -620,7 +636,7 @@ class DashboardStore:
         return rows[offset:offset + limit]
 
     def get_memory(self, memory_id: str) -> dict[str, Any] | None:
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             for table, memory_kind in [("working_memory", "working"), ("episodic_memory", "episodic")]:
                 if table not in tables:
@@ -776,7 +792,7 @@ class DashboardStore:
                 where.append(f"{col} REGEXP ?")
                 params.append(self._prefix_pattern(value))
         clause = "WHERE " + " AND ".join(where) if where else ""
-        with self.connect() as con:
+        with self.session() as con:
             if "triples" not in self._tables(con):
                 return []
             return [dict(r) for r in con.execute(
@@ -829,7 +845,7 @@ class DashboardStore:
             where = "WHERE session_id REGEXP ? OR summary_preview REGEXP ? OR created_at REGEXP ?"
             pattern = self._prefix_pattern(q)
             params = [pattern, pattern, pattern]
-        with self.connect() as con:
+        with self.session() as con:
             if "consolidation_log" not in self._tables(con):
                 return []
             return [dict(r) for r in con.execute(
@@ -844,7 +860,7 @@ class DashboardStore:
         memories = self.list_memories(kind="all", session_id=session_id, sort="recent", limit=limit)
         consolidations = self.consolidations(q=session_id, limit=limit)
         triples: list[dict[str, Any]] = []
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             if "triples" in tables:
                 cols = {r[1] for r in con.execute("PRAGMA table_info(triples)")}
@@ -926,7 +942,7 @@ class DashboardStore:
             raise ValueError("memory not found")
         backup_info = self.backup_database() if backup else None
         now = _utc_now()
-        with self.connect_rw() as con:
+        with self.session(rw=True) as con:
             updated = 0
             for table in ("working_memory", "episodic_memory"):
                 if table in self._tables(con):
@@ -952,7 +968,7 @@ class DashboardStore:
         if not before:
             raise ValueError("memory not found")
         backup_info = self.backup_database() if backup else None
-        with self.connect_rw() as con:
+        with self.session(rw=True) as con:
             updated = 0
             for table in ("working_memory", "episodic_memory", "memories"):
                 if table in self._tables(con):
@@ -976,7 +992,7 @@ class DashboardStore:
         if not before:
             raise ValueError("memory not found")
         backup_info = self.backup_database() if backup else None
-        with self.connect_rw() as con:
+        with self.session(rw=True) as con:
             updated = 0
             for table in ("working_memory", "episodic_memory", "memories"):
                 if table in self._tables(con):
@@ -1004,7 +1020,7 @@ class DashboardStore:
             raise ValueError("memory not found")
         backup_info = self.backup_database() if backup else None
         value = valid_until or None
-        with self.connect_rw() as con:
+        with self.session(rw=True) as con:
             updated = 0
             for table in ("working_memory", "episodic_memory", "memories"):
                 if table in self._tables(con):
@@ -1035,7 +1051,7 @@ class DashboardStore:
         metadata = dict(before.get("metadata") or {})
         metadata.update({"supersedes": memory_id, "created_by": "mnemosyne-dashboard"})
         backup_info = self.backup_database() if backup else None
-        with self.connect_rw() as con:
+        with self.session(rw=True) as con:
             tables = self._tables(con)
             if "working_memory" not in tables:
                 raise ValueError("working_memory table not found")
@@ -1243,7 +1259,7 @@ class DashboardStore:
         limit = max(1, min(int(limit or 80), 300))
         memories_today: list[dict[str, Any]] = []
         recalled_today: list[dict[str, Any]] = []
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             for table, tier in (("working_memory", "working"), ("episodic_memory", "episodic")):
                 if table not in tables:
@@ -1677,7 +1693,7 @@ class DashboardStore:
 
     def memoria_stats(self) -> dict[str, Any]:
         """Overview of all MEMORIA tables."""
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             stats: dict[str, Any] = {"tables": {}}
             for tbl in ["memoria_facts", "memoria_timelines", "memoria_instructions", "memoria_kg", "memoria_preferences"]:
@@ -1703,7 +1719,7 @@ class DashboardStore:
         limit = max(1, min(int(limit or 200), 1000))
         offset = max(0, int(offset or 0))
         q = (q or "").strip()
-        with self.connect() as con:
+        with self.session() as con:
             tables = self._tables(con)
             if table not in tables:
                 return []
