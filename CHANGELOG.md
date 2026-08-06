@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1
+
+- Fix file-descriptor leak in DashboardStore: `with sqlite3.connect() as con:` commits/rolls back but never closes the connection, leaking 2 fds (db + wal) per API request and eventually hitting the process fd limit (`[Errno 24] Too many open files`). All 16 call sites now use a `session()` contextmanager that closes the connection.
+
 ## 0.14.0
 
 - Restore `?tab=history` compatibility by aliasing old history deep links to the current Activity view.
