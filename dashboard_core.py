@@ -9,9 +9,10 @@ import shutil
 import sqlite3
 import uuid
 from collections import Counter
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 try:
     from mnemosyne.core import PatternDetector
