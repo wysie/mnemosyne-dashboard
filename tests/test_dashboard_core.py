@@ -4,6 +4,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -1009,3 +1011,31 @@ def test_clear_password_keeps_localhost_admin_mode_allowed(tmp_path, monkeypatch
     assert cfg.auth_enabled is False
     assert cfg.has_password is False
     assert cfg.memory_admin_enabled is True
+
+
+def test_connections_are_closed_after_reads(tmp_path):
+    # Regression: `with self.connect() as con:` manages the transaction but does
+    # NOT close the sqlite3 connection. Every read leaked a db + WAL file handle
+    # until the process hit its fd limit and every request failed with EMFILE
+    # ("Too many open files"). Guard that connections are actually closed.
+    db = tmp_path / 'mnemosyne.db'
+    make_db(db)
+    store = DashboardStore(db)
+
+    opened = []
+    real_connect = store.connect
+
+    def tracking_connect():
+        con = real_connect()
+        opened.append(con)
+        return con
+
+    store.connect = tracking_connect
+
+    store.stats()
+    store.list_memories(kind='all', limit=10)
+
+    assert opened, 'expected the store to open at least one connection'
+    for con in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            con.execute('SELECT 1')  # 'Cannot operate on a closed database' when closed
