@@ -123,6 +123,7 @@ async function bootstrapDashboard(){
   }
   hideLogin();
   await loadStats();
+  await loadDatabases();
   await initRealtime();
   if(route.tab !== 'overview' || route.drawer) await applyRoute(route);
   renderBootErrorStatus();
@@ -484,6 +485,50 @@ async function loadStats(){
   fillSelect($('#memorySession'), optionsFrom(s.by_session, 'session_id'), 'all sessions');
   bindBreakdownClicks();
   loadLiveMemoryStream(false);
+}
+function setDbSwitchStatus(message='', isError=false){
+  const el = $('#dbSwitchStatus');
+  if(!el) return;
+  el.textContent = message;
+  el.classList.toggle('hidden', !message);
+  el.classList.toggle('is-error', !!isError);
+}
+async function loadDatabases(){
+  const sel = $('#dbSelector');
+  const pathEl = $('#dbPath');
+  if(!sel) return;
+  let data;
+  try { data = await api('/api/databases'); }
+  catch { return; }
+  const dbs = data.databases || [];
+  // With a single brain there is nothing to switch between; keep the plain path text.
+  if(dbs.length <= 1){
+    sel.classList.add('hidden');
+    pathEl?.classList.remove('hidden');
+    return;
+  }
+  sel.innerHTML = dbs.map(d => `<option value="${esc(d.path)}"${d.active ? ' selected' : ''}>${esc(d.label)}</option>`).join('');
+  sel.title = data.active || '';
+  sel.classList.remove('hidden');
+  pathEl?.classList.add('hidden');
+}
+async function selectDatabase(path){
+  const sel = $('#dbSelector');
+  if(sel) sel.disabled = true;
+  setDbSwitchStatus('Switching brain…');
+  try {
+    const r = await postJson('/api/databases/select', { path });
+    if(!r.ok) throw new Error(r.error || 'Switch failed');
+    setDbSwitchStatus('');
+    await loadStats();
+    switchTab(currentRoute.tab || 'overview', { push:false });
+    await loadDatabases();
+  } catch(e){
+    setDbSwitchStatus(`Could not switch: ${e.message}`, true);
+    await loadDatabases();
+  } finally {
+    if(sel) sel.disabled = false;
+  }
 }
 function renderRealtimeStatus(){
   // Realtime diagnostics belong in Settings, not the Overview hero.
@@ -3722,6 +3767,7 @@ $('#viewAuditLog').onclick = async () => {
   try { const r = await api('/api/admin/audit?limit=50'); showDetail(r.items, 'Memory audit log'); }
   catch(e){ $('#memoryAdminStatus').textContent = e.message; }
 };
+$('#dbSelector')?.addEventListener('change', e => selectDatabase(e.target.value));
 $('#retryBootstrap').onclick = () => bootstrapDashboard().catch(handleInitError);
 $('#copyBootError').onclick = copyBootErrorDetails;
 $('#logoutAuth').onclick = async () => { await postJson('/api/auth/logout', {}); showLogin(); };

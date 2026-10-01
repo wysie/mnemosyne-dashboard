@@ -69,6 +69,62 @@ def default_db_path() -> Path:
     return home / "mnemosyne" / "data" / "mnemosyne.db"
 
 
+def _label_for_db(p: Path, home: Path) -> str:
+    """Derive a human-friendly label for a Mnemosyne DB path.
+
+    Per-profile DBs (``<home>/profiles/<name>/mnemosyne/data/mnemosyne.db``)
+    are labelled with the profile name; the root DB
+    (``<home>/mnemosyne/data/mnemosyne.db``) is labelled ``coordinator``.
+    Anything outside the Hermes home falls back to a path-derived name.
+    """
+    try:
+        parts = p.relative_to(home).parts
+    except ValueError:
+        return p.parent.parent.name or p.stem
+    if parts and parts[0] == "profiles" and len(parts) >= 2:
+        return parts[1]
+    if parts and parts[0] == "mnemosyne":
+        return "coordinator"
+    return p.parent.parent.name or p.stem
+
+
+def discover_databases(active_db: str, configured: list[str] | None = None) -> list[dict]:
+    """Return the allowlisted set of selectable Mnemosyne DBs.
+
+    Sources, in priority order: an explicit ``configured`` list, auto-discovered
+    per-profile Hermes DBs under ``$HERMES_HOME``, and always the currently-active
+    DB. Only existing files are returned and duplicates (by resolved path) are
+    collapsed. Each entry is ``{path, label, active, size_bytes}``.
+    """
+    import glob
+
+    home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+    candidates: list[str] = []
+    if configured:
+        candidates.extend(configured)
+    auto = [home / "mnemosyne" / "data" / "mnemosyne.db"]
+    auto += [Path(p) for p in glob.glob(str(home / "profiles" / "*" / "mnemosyne" / "data" / "mnemosyne.db"))]
+    candidates.extend(str(p) for p in auto)
+    candidates.append(active_db)
+
+    active_resolved = str(Path(active_db).expanduser().resolve())
+    seen: set[str] = set()
+    out: list[dict] = []
+    for raw in candidates:
+        p = Path(raw).expanduser().resolve()
+        sp = str(p)
+        if sp in seen or not p.is_file():
+            continue
+        seen.add(sp)
+        out.append({
+            "path": sp,
+            "label": _label_for_db(p, home),
+            "active": sp == active_resolved,
+            "size_bytes": p.stat().st_size,
+        })
+    return out
+
+
 class DashboardStore:
     """Read-only access helpers for the local Mnemosyne SQLite store."""
 

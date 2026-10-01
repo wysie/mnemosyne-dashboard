@@ -10,6 +10,7 @@ dist/
 build/
 *.egg-info/
 node_modules/
+.venv/
 .env
 .env.*
 server.pid

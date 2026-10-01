@@ -545,3 +545,8 @@ main{padding:28px clamp(24px,4vw,56px) 56px}.cards{display:grid;grid-template-co
 [data-theme="light"] input,[data-theme="light"] select,[data-theme="light"] textarea{color:#171a20!important;background:#fff!important;border-color:rgba(19,22,29,.18)!important}
 [data-theme="light"] .memory-select{background:#fff!important;border-color:rgba(19,22,29,.20)!important}
 @media(min-width:761px){.content{font-size:14px}.meta{font-size:11.5px}nav button{font-size:13.5px}}
+.db-selector{margin-top:8px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);color:var(--text);font:600 12px/1.4 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:7px 9px}
+.db-selector:focus-visible{outline:none;border-color:var(--line2);box-shadow:0 0 0 3px rgba(101,214,255,.10)}
+.db-selector.hidden,.db-switch-status.hidden{display:none}
+.db-switch-status{margin-top:6px;color:var(--muted);font-size:11px;line-height:1.4}
+.db-switch-status.is-error{color:var(--red)}

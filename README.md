@@ -121,6 +121,7 @@ The generator creates a temporary mock SQLite database, starts the dashboard on 
 - Optional password authentication, configurable from the Settings tab
 - Password-gated memory maintenance mode with supersede, expire/invalidate, and importance update actions
 - Automatic SQLite backups and JSONL audit log for admin memory mutations
+- Switch between multiple Mnemosyne databases (for example per-profile brains) from the Overview page without restarting the server
 - Editable Settings fields for bind address, port, and Mnemosyne database path
 - Database diagnostics for install health: path, readability, file size, modified time, tables, row counts, and copyable diagnostics
 - Unified session detail drawer from top sessions, consolidation entries, and timeline session chips
@@ -135,6 +136,7 @@ The generator creates a temporary mock SQLite database, starts the dashboard on 
 - Binds to `0.0.0.0` by default so the dashboard is reachable on your LAN
 - Reports a localhost URL for same-machine access and a LAN URL when one is detectable
 - Browsing opens the Mnemosyne SQLite database with `mode=ro`
+- The database selector only switches between a fixed set of databases (discovered Hermes brains, the active database, and any listed in `db_paths`); other paths are rejected, switching uses the same auth as other state-changing requests, and every database is still opened read-only (`mode=ro`)
 - Localhost-only memory admin can be enabled without password for developer convenience; LAN/non-local admin mode requires password auth before mutation endpoints work
 - Admin actions are limited to Mnemosyne-aligned supersede, expire/invalidate, and importance updates
 - Raw memory content overwrite and hard delete endpoints are intentionally not exposed
@@ -185,11 +187,28 @@ Default config:
   "port": 8765,
   "db_path": "~/.hermes/mnemosyne/data/mnemosyne.db",
   "auth_enabled": false,
-  "memory_admin_enabled": false
+  "memory_admin_enabled": false,
+  "db_paths": []
 }
 ```
 
 On first config creation, the dashboard auto-detects the Mnemosyne SQLite database path by checking `MNEMOSYNE_DASHBOARD_DB`, `MNEMOSYNE_DB_PATH`, `MNEMOSYNE_DB`, then the standard Hermes path `~/.hermes/mnemosyne/data/mnemosyne.db`.
+
+### Switching between databases
+
+When more than one Mnemosyne database is found, the Overview "Database" card shows a selector. Choosing one switches the active database immediately, without a restart. The change is in-memory only and does not update the saved config.
+
+The selectable databases are the currently active one, any Hermes brains found under `~/.hermes` (the root database plus `profiles/*/mnemosyne/data/mnemosyne.db`), and anything listed in the optional `db_paths` config key. Only existing files that open read-only are offered.
+
+```json
+{
+  "db_paths": [
+    "~/.hermes/profiles/project-manager/mnemosyne/data/mnemosyne.db"
+  ]
+}
+```
+
+`db_paths` is optional; when it is empty, only the active database and auto-discovery are used.
 
 You can update it through the Hermes tool:
 

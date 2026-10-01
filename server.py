@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from config import auth_cookie_value, data_dir, effective_config, public_config, save_config, verify_password
-from dashboard_core import DashboardStore, default_db_path
+from dashboard_core import DashboardStore, default_db_path, discover_databases
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
@@ -325,6 +325,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "service": "mnemosyne-dashboard", "read_only": not self.cfg.memory_admin_enabled, "config": public_config(self.cfg)})
             if path == "/api/config":
                 return self._send_json({"ok": True, "config": public_config(self.cfg)})
+            if path == "/api/databases":
+                active = str(getattr(self.server, "db_path", default_db_path()))
+                configured = getattr(self.cfg, "db_paths", None) or None
+                return self._send_json({"databases": discover_databases(active_db=active, configured=configured), "active": active})
             if path == "/api/diagnostics":
                 return self._send_json(self.store.diagnostics())
             if path == "/api/runtime/status":
@@ -429,6 +433,24 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = save_config(**updates)
                 self.server.saved_config = cfg
                 return self._send_json({"ok": True, "config": public_config(cfg), "message": "Saved. Auth changes take effect immediately; host/port/db changes require restart."})
+            if path == "/api/databases/select":
+                requested = str(body.get("path") or "").strip()
+                persist = bool(body.get("persist", False))
+                active = str(getattr(self.server, "db_path", default_db_path()))
+                configured = getattr(self.cfg, "db_paths", None) or None
+                allow = {d["path"] for d in discover_databases(active_db=active, configured=configured)}
+                resolved = str(Path(requested).expanduser().resolve()) if requested else ""
+                if resolved not in allow:
+                    return self._send_json({"ok": False, "error": "database not in allowlist"}, 400)
+                try:
+                    DashboardStore(resolved).stats()
+                except Exception as exc:
+                    return self._send_json({"ok": False, "error": f"cannot open db: {exc}"}, 400)
+                self.server.db_path = Path(resolved)
+                if persist:
+                    cfg = save_config(db_path=resolved)
+                    self.server.saved_config = cfg
+                return self._send_json({"ok": True, "active": resolved, "persisted": persist})
             if path == "/api/admin/backup":
                 if not self._require_admin():
                     return
