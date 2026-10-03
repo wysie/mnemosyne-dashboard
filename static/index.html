@@ -50,6 +50,7 @@
         <button data-tab="lifecycle"><span>LC</span>Lifecycle</button>
         <button data-tab="graph"><span>KG</span>Knowledge Graph</button>
         <button data-tab="memoria"><span>MR</span>MEMORIA</button>
+        <button data-tab="personafacts" data-title="Persona &amp; Canonical Facts"><span>PF</span>Persona &amp; Facts</button>
         <button data-tab="activity"><span>HS</span>History</button>
         <button data-tab="settings"><span>ST</span>Settings</button>
       </nav>
@@ -459,7 +460,35 @@
             </div>
           </div>
         </section>
+
+        <section id="personafacts" class="tab">
+          <div class="section-head"><h2>Persona &amp; Canonical Facts</h2><span>L3 PERSONA LAYER AND CANONICAL FACTS</span></div>
+          <div class="section-tabs glass" data-section="personafacts">
+            <button data-panel="personaPanel" class="active">Persona</button>
+            <button data-panel="canonicalPanel">Canonical Facts</button>
+          </div>
+          <div id="personaPanel" class="subpanel active">
+            <div class="toolbar glass">
+              <select id="personaTierFilter"><option value="">All tiers</option><option value="permanent">Permanent</option><option value="long_term">Long-term</option><option value="working">Working</option></select>
+              <input id="personaQuery" placeholder="Search persona content or topic…" />
+              <button id="personaSearch" class="primary">Search</button>
+            </div>
+            <div id="personaStats" class="break-row-wrap"></div>
+            <div class="table-wrap"><table><thead><tr><th>Tier</th><th>Topic</th><th>Content</th><th>Reinforced</th><th>Count</th></tr></thead><tbody id="personaRows"></tbody></table></div>
+          </div>
+          <div id="canonicalPanel" class="subpanel">
+            <div class="toolbar glass">
+              <input id="canonicalOwnerFilter" placeholder="Owner…" />
+              <input id="canonicalCategoryFilter" placeholder="Category…" />
+              <input id="canonicalQuery" placeholder="Search owner / category / name / body…" />
+              <button id="canonicalSearch" class="primary">Search</button>
+            </div>
+            <div id="canonicalStats" class="break-row-wrap"></div>
+            <div class="table-wrap"><table><thead><tr><th>Owner</th><th>Category</th><th>Name</th><th>Body</th><th>Version</th></tr></thead><tbody id="canonicalRows"></tbody></table></div>
+          </div>
+        </section>
       </main>
+
       <footer class="app-footer">
         Built by <a href="https://github.com/wysie" target="_blank" rel="noopener noreferrer">wysie</a> with <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noopener noreferrer">Hermes Agent</a> · Thanks to <a href="https://github.com/AxDSan" target="_blank" rel="noopener noreferrer">AxDSan</a> for creating <a href="https://github.com/AxDSan/mnemosyne" target="_blank" rel="noopener noreferrer">Mnemosyne</a>
       </footer>

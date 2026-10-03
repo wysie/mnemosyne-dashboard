@@ -376,20 +376,27 @@ function closeMobileMenuForViewportChange(){
   if(activeElement && activeElement.closest('.menu-search')) return;
   closeMobileMenu();
 }
+function canonicalTab(tab){
+  if(tab === 'constellation') return 'visualiserlegacy';
+  if(tab === 'visualiser3d') return 'visualiser';
+  if(tab === 'history') return 'activity';
+  if(tab === 'personafacts') return 'personafacts';
+  return tab || 'overview';
+}
+function sectionFor(name){
+  return ({ visualiser:'visualiser3d', palace:'memoryPalace', visualiserlegacy:'constellation', constellation:'constellation', recall:'explore', memories:'explore', history:'activity', timelineView:'activity', consolidations:'activity', triples:'graph', todayAdded:'today', todayRecalled:'today', todayTriples:'today', todayConsolidations:'today', persona:'personafacts', personafacts:'personafacts', canonical:'personafacts', canonicalfacts:'personafacts' })[name] || name;
+}
+function defaultPanelFor(section){
+  return ({ explore:'exploreMemories', activity:'activityTimeline', graph:'graphGraph', today:'todayAdded', personafacts:'personaPanel' })[section];
+}
+function panelFor(name){
+  return ({ memories:'exploreMemories', recall:'exploreRecall', history:'activityTimeline', timelineView:'activityTimeline', consolidations:'activityConsolidations', graph:'graphGraph', triples:'graphTriples', today:'todayAdded', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations', persona:'personaPanel', personafacts:'personaPanel', canonical:'canonicalPanel', canonicalfacts:'canonicalPanel' })[name] || defaultPanelFor(name);
+}
 function showPanel(sectionId, panelId){
   const section = $(`#${sectionId}`);
   if(!section || !panelId) return;
   section.querySelectorAll('.subpanel').forEach(panel => panel.classList.toggle('active', panel.id === panelId));
   section.querySelectorAll('.section-tabs button').forEach(button => button.classList.toggle('active', button.dataset.panel === panelId));
-}
-function sectionFor(name){
-  return ({ visualiser:'visualiser3d', palace:'memoryPalace', visualiserlegacy:'constellation', constellation:'constellation', recall:'explore', memories:'explore', history:'activity', timelineView:'activity', consolidations:'activity', triples:'graph', todayAdded:'today', todayRecalled:'today', todayTriples:'today', todayConsolidations:'today' })[name] || name;
-}
-function defaultPanelFor(section){
-  return ({ explore:'exploreMemories', activity:'activityTimeline', graph:'graphGraph', today:'todayAdded' })[section];
-}
-function panelFor(name){
-  return ({ memories:'exploreMemories', recall:'exploreRecall', history:'activityTimeline', timelineView:'activityTimeline', consolidations:'activityConsolidations', graph:'graphGraph', triples:'graphTriples', today:'todayAdded', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations' })[name] || defaultPanelFor(name);
 }
 function stopCanvasVisualiserLoop(){
   if(constellationScene.frame) cancelAnimationFrame(constellationScene.frame);
@@ -464,6 +471,56 @@ function switchTab(name, opts={}){
   if(section==='memoryPalace') loadMemoryPalace();
   if(section==='settings') { loadAuthStatus(); loadDiagnostics(); loadRuntimeDiagnostics(); loadRealtimePanel(); }
   if(section==='memoria') loadMemoria();
+  if(section==='personafacts') loadPersonaFacts();
+}
+
+async function loadPersonaFacts(){
+  await Promise.all([loadPersonaPanel(), loadCanonicalPanel()]);
+}
+async function loadPersonaPanel(){
+  const tier = $('#personaTierFilter')?.value || '';
+  const q = $('#personaQuery')?.value?.trim() || '';
+  const r = await api(`/api/persona?tier=${encodeURIComponent(tier)}&q=${encodeURIComponent(q)}&limit=200`);
+  const items = r.items || [];
+  const stats = r.stats || {};
+  const statBadges = [
+    `<span class="badge">total ${Number(stats.total || 0).toLocaleString()}</span>`,
+    ...(stats.by_tier || []).map(t => `<span class="badge tier-${esc(String(t.tier || 'unknown'))}">${esc(t.tier)} ${Number(t.count).toLocaleString()}</span>`),
+  ];
+  $('#personaStats').innerHTML = statBadges.join('');
+  const tbody = $('#personaRows');
+  if(!items.length){
+    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center">No persona facts found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(item => {
+    const reinforced = item.last_reinforced_at ? prettyTime(item.last_reinforced_at) : '—';
+    const count = Number(item.reinforcement_count || 0);
+    return `<tr><td><span class="badge tier-${esc(item.tier || 'unknown')}">${esc(item.tier || '—')}</span></td><td>${esc(item.topic || '—')}</td><td>${esc(item.content || '')}</td><td title="${esc(item.last_reinforced_at || '')}">${esc(reinforced)}</td><td>${count.toLocaleString()}</td></tr>`;
+  }).join('');
+}
+async function loadCanonicalPanel(){
+  const owner = $('#canonicalOwnerFilter')?.value?.trim() || '';
+  const category = $('#canonicalCategoryFilter')?.value?.trim() || '';
+  const q = $('#canonicalQuery')?.value?.trim() || '';
+  const r = await api(`/api/canonical?owner_id=${encodeURIComponent(owner)}&category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&limit=200`);
+  const items = r.items || [];
+  const stats = r.stats || {};
+  const statBadges = [
+    `<span class="badge">total ${Number(stats.total || 0).toLocaleString()}</span>`,
+    ...(stats.by_category || []).map(c => `<span class="badge">${esc(c.category)} ${Number(c.count).toLocaleString()}</span>`),
+  ];
+  $('#canonicalStats').innerHTML = statBadges.join('');
+  const tbody = $('#canonicalRows');
+  if(!items.length){
+    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center">No canonical facts found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(item => {
+    const body = String(item.body || '').replace(/\n/g, ' ');
+    const version = Number(item.version || 0);
+    return `<tr><td>${esc(item.owner_id || '—')}</td><td>${esc(item.category || '—')}</td><td>${esc(item.name || '—')}</td><td>${esc(body)}</td><td>${version.toLocaleString()}</td></tr>`;
+  }).join('');
 }
 
 async function loadStats(){
@@ -3594,7 +3651,7 @@ async function loadMemoriaKg(){
 
 $$('nav button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 $$('.section-tabs button').forEach(b => b.onclick = () => {
-  const panelRoute = ({ exploreMemories:'memories', exploreRecall:'recall', activityTimeline:'timelineView', activityConsolidations:'consolidations', graphGraph:'graph', graphTriples:'triples', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations' })[b.dataset.panel];
+  const panelRoute = ({ exploreMemories:'memories', exploreRecall:'recall', activityTimeline:'timelineView', activityConsolidations:'consolidations', graphGraph:'graph', graphTriples:'triples', todayAdded:'todayAdded', todayRecalled:'todayRecalled', todayTriples:'todayTriples', todayConsolidations:'todayConsolidations', personaPanel:'personafacts', canonicalPanel:'canonicalfacts' })[b.dataset.panel];
   if(panelRoute) { switchTab(panelRoute); return; }
   const section = b.closest('.tab')?.id;
   showPanel(section, b.dataset.panel);
@@ -3629,6 +3686,13 @@ $('#reviewExpiry').onclick = setSelectedReviewExpiry;
 $('#reviewExpire').onclick = expireSelectedReviewMemories;
 $('#globalSearchButton').onclick = loadGlobalSearch; $('#globalSearchQuery').onkeydown = e => { if(e.key==='Enter') loadGlobalSearch(); };
 $('#menuSearchButton').onclick = menuSearch; $('#menuSearchQuery').onkeydown = e => { if(e.key==='Enter') menuSearch(); };
+$('#personaSearch').onclick = loadPersonaPanel;
+$('#personaQuery').onkeydown = e => { if(e.key === 'Enter') loadPersonaPanel(); };
+$('#personaTierFilter').onchange = loadPersonaPanel;
+$('#canonicalSearch').onclick = loadCanonicalPanel;
+$('#canonicalQuery').onkeydown = e => { if(e.key === 'Enter') loadCanonicalPanel(); };
+$('#canonicalOwnerFilter').onkeydown = e => { if(e.key === 'Enter') loadCanonicalPanel(); };
+$('#canonicalCategoryFilter').onkeydown = e => { if(e.key === 'Enter') loadCanonicalPanel(); };
 $('#recallButton').onclick = loadRecallDebug; $('#recallQuery').onkeydown = e => { if(e.key==='Enter') loadRecallDebug(); };
 $('#timelineButton').onclick = loadTimeline; $('#timelineQuery').onkeydown = e => { if(e.key==='Enter') loadTimeline(); }; $('#timelineGroup').onchange = loadTimeline;
 $('#memoryClear').onclick = () => { ['memoryQuery','memorySource','memoryScope','memorySession','memoryVeracity','memoryDegradation','memoryTrustPreset'].forEach(id => $('#'+id).value = ''); $('#memoryKind').value = 'all'; $('#memoryStatus').value = 'active'; $('#memorySort').value = 'recent'; loadMemories(); };
