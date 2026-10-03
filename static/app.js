@@ -2,6 +2,9 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const THEME_KEY = 'mnemosyne-dashboard-theme';
 const VISUALISER_MODE_KEY = 'mnemosyne-dashboard-visualiser-mode';
+const PROFILE_KEY = 'mnemosyne-dashboard-profile';
+let activeProfileName = null;
+let profileSwitching = false;
 let graphState = { nodes: [], edges: [], byId: {} };
 let consolidationState = [];
 let authState = { config: {}, auth_enabled: false, authenticated: true };
@@ -48,6 +51,60 @@ async function api(path, options={}){
   return j;
 }
 async function postJson(path, body){ return api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body || {})}); }
+
+// ───────────────────────── Profile switcher ─────────────────────────
+async function loadProfiles(){
+  try {
+    const r = await api('/api/profiles');
+    const profiles = r.profiles || [];
+    const sel = $('#profileSelect');
+    if(!sel) return;
+    const saved = localStorage.getItem(PROFILE_KEY);
+    sel.innerHTML = profiles.map(p => `<option value="${esc(p.name)}">${esc(p.name)} (${p.memory_count.toLocaleString()})</option>`).join('');
+    // Set active selection: saved profile if it exists, otherwise the currently active one
+    const active = await api('/api/profile/active');
+    activeProfileName = active.name;
+    if(saved && profiles.some(p => p.name === saved)){
+      sel.value = saved;
+    } else {
+      sel.value = active.name !== 'unknown' ? active.name : (profiles[0]?.name || '');
+    }
+    updateProfileBadge();
+  } catch(e) {
+    console.warn('Failed to load profiles', e);
+  }
+}
+function updateProfileBadge(){
+  const badge = $('#profileBadge');
+  if(badge && activeProfileName && activeProfileName !== 'unknown'){
+    badge.textContent = activeProfileName;
+  } else if(badge) {
+    badge.textContent = '';
+  }
+}
+async function switchProfile(name, { skipReload=false } = {}){
+  if(!name || profileSwitching) return;
+  profileSwitching = true;
+  try {
+    const r = await postJson('/api/profile/switch', { name });
+    if(r.ok && r.profile){
+      activeProfileName = r.profile.name;
+      localStorage.setItem(PROFILE_KEY, name);
+      updateProfileBadge();
+      if(!skipReload){
+        // Reload all current tab data — same as bootstrap but without re-checking auth
+        await loadStats();
+        const section = document.querySelector('.tab.active')?.id || 'overview';
+        if(section === 'overview') { /* loadStats already loaded overview */ }
+        else switchTab(section, { push:false });
+      }
+    }
+  } catch(e) {
+    console.error('Profile switch failed', e);
+  } finally {
+    profileSwitching = false;
+  }
+}
 function showLogin(){ $('#loginOverlay')?.classList.remove('hidden'); }
 function hideLogin(){ $('#loginOverlay')?.classList.add('hidden'); }
 function bootErrorPayload(){
@@ -122,6 +179,12 @@ async function bootstrapDashboard(){
     return;
   }
   hideLogin();
+  // Load profiles and restore persisted selection before loading data
+  await loadProfiles();
+  const savedProfile = localStorage.getItem(PROFILE_KEY);
+  if(savedProfile && savedProfile !== activeProfileName){
+    await switchProfile(savedProfile, { skipReload: true });
+  }
   await loadStats();
   await initRealtime();
   if(route.tab !== 'overview' || route.drawer) await applyRoute(route);
@@ -151,6 +214,8 @@ function meta(item, opts={}){
   if(lifecycle) pills.push(`<span class="badge lifecycle-${esc(item.degradation_label)}" title="degradation tier: ${esc(item.degradation_tier)} · recall weight ${Number(item.degradation_weight ?? 1).toFixed(2)}">${esc(lifecycle)}</span>`);
   if(importance > 0) pills.push(`<span class="badge importance-badge" title="importance: ${importance.toFixed(2)}">${importance.toFixed(2)}</span>`);
   if(scope && scope !== 'session') pills.push(`<span class="badge" title="scope: ${esc(scope)}">${esc(scope)}</span>`);
+  const author = String(item.author_id || '').trim();
+  if(author) pills.push(`<span class="badge profile-badge" title="profile: ${esc(author)}">${esc(author)}</span>`);
   if(opts.sessionLink !== false && session && session !== 'default') pills.push(`<button type="button" class="badge session-link" data-session="${esc(session)}" title="Open session: ${esc(session)}">${esc(shortId(session))}</button>`);
   if(timeLabel) pills.push(`<span class="meta-time" title="${esc(rawTime)}">${esc(timeLabel)}</span>`);
   return `<div class="meta">${pills.join('')}</div>`;
@@ -801,6 +866,7 @@ function memoryDetailHtml(item){
         <div class="diag-row"><span>ID</span><strong>${esc(item.id)}</strong></div>
         <div class="diag-row"><span>Session</span>${item.session_id && item.session_id !== 'default' ? `<button id="memorySessionLink" class="diag-link" title="Open session: ${esc(item.session_id)}">${esc(item.session_id)}</button>` : `<strong>${esc(item.session_id || 'default')}</strong>`}</div>
         <div class="diag-row"><span>Source</span><strong>${esc(item.source || 'unknown')}</strong></div>
+        <div class="diag-row"><span>Profile</span><strong>${esc(item.author_id || 'none')}</strong></div>
         <div class="diag-row"><span>Trust</span><strong>${esc(trust)} · recall weight ×${Number(item.trust_weight ?? 0).toFixed(2)}${item.contaminated ? ' · review recommended' : ''}</strong></div>
         <div class="diag-row"><span>Lifecycle</span><strong>${esc(lifecycle)} · degraded ${esc(item.degraded_at || 'never')} · recall weight ×${Number(item.degradation_weight ?? 1).toFixed(2)}</strong></div>
         <div class="diag-row"><span>Effective weight</span><strong>×${Number(item.effective_memory_weight ?? 0).toFixed(2)}</strong></div>
@@ -3725,6 +3791,7 @@ $('#viewAuditLog').onclick = async () => {
 $('#retryBootstrap').onclick = () => bootstrapDashboard().catch(handleInitError);
 $('#copyBootError').onclick = copyBootErrorDetails;
 $('#logoutAuth').onclick = async () => { await postJson('/api/auth/logout', {}); showLogin(); };
+$('#profileSelect').onchange = () => { const v = $('#profileSelect').value; if(v) switchProfile(v); };
 function toggleTheme(){ setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'); }
 $('#themeToggle').onclick = toggleTheme;
 $('#mobileThemeToggle').onclick = toggleTheme;
