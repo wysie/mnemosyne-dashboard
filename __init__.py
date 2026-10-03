@@ -105,6 +105,7 @@ def _listener_pids(port: int) -> list[int]:
             text=True,
             stderr=subprocess.DEVNULL,
             timeout=2,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:
         return []
@@ -200,7 +201,7 @@ def _start(args=None, **kw):
     log = data_dir() / "server.log"
     cmd = [sys.executable, str(server), "--host", cfg.host, "--port", str(cfg.port), "--db", cfg.db_path]
     with log.open("ab") as out:
-        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, start_new_session=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     _pid_file().write_text(str(proc.pid))
     _write_runtime(proc.pid, cfg, log)
 
