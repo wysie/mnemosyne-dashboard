@@ -95,6 +95,7 @@ def _listener_pids(port: int) -> list[int]:
             text=True,
             stderr=subprocess.DEVNULL,
             timeout=2,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:
         return []
